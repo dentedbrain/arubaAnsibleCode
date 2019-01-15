@@ -1,0 +1,12 @@
+---
+
+  - name: Get Controllers
+    hosts: aruba_controller
+    connection: local
+    gather_facts: no
+
+    tasks:
+      - name: Build Config
+        template:
+          src=templates/skeleton.conf.j2
+          dest=configs/{{hostname}}.conf
