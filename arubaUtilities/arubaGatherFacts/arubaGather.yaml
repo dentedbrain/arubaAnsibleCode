@@ -1,0 +1,40 @@
+---
+
+- name: Gather Controller Facts
+  hosts: aruba_lab
+  connection: local
+  gather_facts: no
+  strategy: free
+  vars:
+    ansible_ssh_user: "{{ aruba_ssh_user }}"
+    ansible_ssh_pass: "{{ aruba_ssh_pass }}"
+
+  tasks:
+    - name: "Get Aruba Variables"
+      aruba_command:
+        commands:
+          - show roleinfo | include masterip
+          - show location
+          - show running-config | include default-gateway
+          - show snmp trap-hosts | include lab
+          - show ip interface brief | include 255
+      register: aruba_data
+    
+    # Using Jinja2 if/else logic to set no result to blank space
+    - set_fact:
+        master: "{% if aruba_data.stdout[0] == '' %} {% else %}{{ aruba_data.stdout[0].split(':')[1] }}{% endif %}"
+        storenum: "{{ inventory_hostname.lstrip('lab').split('-')[0] }}"
+        location: "{% if aruba_data.stdout[1] == '' %} {% elif '\n' in aruba_data.stdout[1] %}{{ aruba_data.stdout[1].split('\n')[-1] }}{% else %}{{ aruba_data.stdout[1] }}{% endif %}"
+        gateway: "{% if aruba_data.stdout[2] == '' %} {% else %}{{ aruba_data.stdout[2].split()[-1] }}{% endif %}"
+        airwave: "{% if aruba_data.stdout[3] == '' %} {% else %}{{ aruba_data.stdout[3].split()[0] }}{% endif %}"
+
+    # Magic
+    # Using a jinja2 loop to define a fact carrying multiple variables to capture all vlans and IP information
+    - set_fact: "{% for line in aruba_data.stdout[4].splitlines() %}vlan_{{line.split()[1]}}: \"{{ line.split()[2] }}\"\rvlan_{{line.split()[1]}}_mask: \"{{ line.split()[4] }}\"\r{% endfor %}"
+
+    - name: Build Config
+      template:
+        src=templates/hostvars.template.j2
+        dest=host_vars/{{inventory_hostname}}.yaml
+
+
